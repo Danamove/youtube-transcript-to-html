@@ -103,10 +103,63 @@
     return [...tracks].sort((a, b) => scoreTrack(b) - scoreTrack(a))[0];
   }
 
-  function withJson3(url) {
+  function withFmt(url, fmt) {
     const parsed = new URL(url, "https://www.youtube.com");
-    parsed.searchParams.set("fmt", "json3");
+    parsed.searchParams.set("fmt", fmt);
     return parsed.toString();
+  }
+
+  function withJson3(url) {
+    return withFmt(url, "json3");
+  }
+
+  function captionFetchUrls(url) {
+    return [withJson3(url), url, withFmt(url, "srv3")];
+  }
+
+  function linesToTranscript(lines) {
+    return (lines || [])
+      .map((line) => normalizeCueText(line))
+      .filter(Boolean)
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function transcriptButtonMatch(label) {
+    const text = String(label || "").toLowerCase();
+    return (
+      text.includes("transcript") ||
+      text.includes("תמליל") ||
+      text.includes("תמלול") ||
+      text.includes("תמלול")
+    );
+  }
+
+  const INNERTUBE_CLIENTS = {
+    IOS: {
+      clientName: "IOS",
+      clientVersion: "20.10.38",
+      deviceMake: "Apple",
+      deviceModel: "iPhone16,2",
+      osName: "iOS",
+      osVersion: "18.2.1.22C161",
+    },
+    ANDROID: {
+      clientName: "ANDROID",
+      clientVersion: "20.10.38",
+      androidSdkVersion: 34,
+      osName: "Android",
+      osVersion: "14",
+    },
+  };
+
+  function buildInnertubePlayerBody(videoId, clientName) {
+    const client = INNERTUBE_CLIENTS[clientName] || INNERTUBE_CLIENTS.IOS;
+    return {
+      context: { client: { ...client } },
+      videoId,
+    };
   }
 
   function normalizeCueText(text) {
@@ -139,11 +192,25 @@
 
   function xmlToTranscript(xml) {
     const texts = [...xml.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)];
-    return texts
-      .map((match) => normalizeCueText(match[1]))
-      .filter(Boolean)
-      .join("\n")
-      .trim();
+    if (texts.length) {
+      return linesToTranscript(texts.map((match) => match[1]));
+    }
+    const paragraphs = [...xml.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)];
+    return linesToTranscript(
+      paragraphs.map((match) => match[1].replace(/<[^>]+>/g, " "))
+    );
+  }
+
+  function vttToTranscript(vtt) {
+    const lines = [];
+    for (const raw of String(vtt || "").split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line === "WEBVTT" || line.startsWith("NOTE")) continue;
+      if (/^\d+$/.test(line)) continue;
+      if (line.includes("-->")) continue;
+      lines.push(line);
+    }
+    return linesToTranscript(lines);
   }
 
   function parseTranscriptPayload(body) {
@@ -154,6 +221,11 @@
     if (trimmed.startsWith("{")) {
       const data = JSON.parse(trimmed);
       const transcript = eventsToTranscript(data.events);
+      if (!transcript) throw new Error("Caption track had no text");
+      return transcript;
+    }
+    if (trimmed.startsWith("WEBVTT")) {
+      const transcript = vttToTranscript(trimmed);
       if (!transcript) throw new Error("Caption track had no text");
       return transcript;
     }
@@ -179,11 +251,18 @@
     listCaptionTracks,
     pickCaptionTrack,
     withJson3,
+    withFmt,
+    captionFetchUrls,
     parseTranscriptPayload,
     metadataFromPlayer,
     videoIdFromHref,
     watchUrlFromId,
     eventsToTranscript,
     xmlToTranscript,
+    vttToTranscript,
+    linesToTranscript,
+    transcriptButtonMatch,
+    buildInnertubePlayerBody,
+    INNERTUBE_CLIENTS,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

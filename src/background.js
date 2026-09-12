@@ -44,11 +44,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function fetchTranscript(rawUrl) {
   if (!rawUrl) throw new Error("Missing caption URL");
-  const url = self.YTB.captions.withJson3(rawUrl);
-  const response = await fetch(url, { credentials: "omit" });
-  if (!response.ok) {
-    throw new Error(`Caption request failed (${response.status})`);
+  const urls = rawUrl.includes("fmt=")
+    ? [rawUrl]
+    : self.YTB.captions.captionFetchUrls(rawUrl);
+  let lastError = "Empty caption response";
+  for (const url of urls) {
+    const response = await fetch(url, { credentials: "omit" });
+    if (!response.ok) {
+      lastError = `Caption request failed (${response.status})`;
+      continue;
+    }
+    const body = await response.text();
+    if (!body.trim()) {
+      lastError = "Empty caption response";
+      continue;
+    }
+    try {
+      return self.YTB.captions.parseTranscriptPayload(body);
+    } catch (error) {
+      lastError = error?.message || lastError;
+    }
   }
-  const body = await response.text();
-  return self.YTB.captions.parseTranscriptPayload(body);
+  throw new Error(lastError);
 }

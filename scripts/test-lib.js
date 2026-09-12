@@ -85,4 +85,31 @@ assert.match(payload, /dQw4w9wgGcQ/);
 assert.match(payload, /Hello world/);
 assert.match(captions.withJson3(tracks[1].baseUrl), /fmt=json3/);
 
+const vtt = `WEBVTT
+
+00:00:00.000 --> 00:00:01.200
+Hello world
+
+00:00:04.000 --> 00:00:05.000
+Next idea
+`;
+assert.equal(captions.parseTranscriptPayload(vtt), "Hello world\nNext idea");
+assert.equal(
+  captions.linesToTranscript(["  Hello world ", "", "Next idea"]),
+  "Hello world\nNext idea"
+);
+assert.equal(
+  captions.transcriptButtonMatch("Show transcript"),
+  true
+);
+assert.equal(
+  captions.transcriptButtonMatch("הצגת תמליל"),
+  true
+);
+assert.equal(captions.transcriptButtonMatch("Share"), false);
+
+const iosBody = captions.buildInnertubePlayerBody("jNQXAC9IVRw", "IOS");
+assert.equal(iosBody.videoId, "jNQXAC9IVRw");
+assert.equal(iosBody.context.client.clientName, "IOS");
+
 console.log("ok");

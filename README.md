@@ -25,6 +25,8 @@ Hebrew captions are preferred, then English, then the first available track. Man
 
 Videos with no captions show an error instead of copying an empty payload.
 
+YouTube now blocks raw caption URLs unless the player proves it made the request. The extension first reuses captions YouTube already loaded, then opens the on-page transcript panel if needed, then asks YouTube’s mobile player API. After you update the files, open `chrome://extensions` and click **Reload** on YouTube Brief Prompt, then refresh the YouTube tab.
+
 ## Preview the target HTML
 
 The agent should save a single RTL file, not dump HTML in chat. A sample of that format lives in [`preview/sample-brief.html`](preview/sample-brief.html).

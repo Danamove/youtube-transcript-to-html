@@ -1,6 +1,7 @@
 (() => {
   const HOST_ID = "ytb-copy-brief-host";
   let busy = false;
+  let requestId = 0;
 
   function isWatchPage() {
     const path = location.pathname;
@@ -88,33 +89,42 @@
       kind === "pending" ? "Copying…" : "Copy prompt + transcript";
   }
 
-  function readPlayerFromScripts() {
-    return window.YTB.captions.parsePlayerResponseFromScripts(document.scripts);
+  function injectPageHook() {
+    if (document.querySelector("script[data-ytb-hook='1']")) return;
+    const script = document.createElement("script");
+    script.src = chrome.runtime.getURL("src/page-hook.js");
+    script.dataset.ytbHook = "1";
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
   }
 
-  function readPlayerFromPage() {
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (payload) => {
-        if (settled) return;
-        settled = true;
+  function requestPage(action, extra = {}, timeoutMs = 8000) {
+    const id = `ytb-${Date.now()}-${(requestId += 1)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
         window.removeEventListener("message", onMessage);
-        resolve(payload || null);
-      };
+        reject(new Error("YouTube page did not answer"));
+      }, timeoutMs);
       const onMessage = (event) => {
         if (event.source !== window) return;
         if (event.data?.source !== "ytb-brief-prompt") return;
-        if (event.data?.type !== "YTB_PLAYER_RESPONSE") return;
-        finish(event.data.payload);
+        if (event.data?.type !== "YTB_RESPONSE") return;
+        if (event.data.id !== id) return;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMessage);
+        if (event.data.error) reject(new Error(event.data.error));
+        else resolve(event.data.payload);
       };
       window.addEventListener("message", onMessage);
-      const script = document.createElement("script");
-      script.src = chrome.runtime.getURL("src/page-bridge.js");
-      script.onload = () => script.remove();
-      script.onerror = () => finish(null);
-      (document.head || document.documentElement).appendChild(script);
-      setTimeout(() => finish(null), 1200);
+      window.postMessage(
+        { source: "ytb-brief-prompt", type: "YTB_REQUEST", id, action, ...extra },
+        "*"
+      );
     });
+  }
+
+  function readPlayerFromScripts() {
+    return window.YTB.captions.parsePlayerResponseFromScripts(document.scripts);
   }
 
   async function readPlayerFromMainWorld() {
@@ -130,38 +140,139 @@
   }
 
   async function getPlayerResponse() {
-    return (
-      (await readPlayerFromMainWorld()) ||
-      (await readPlayerFromPage()) ||
-      readPlayerFromScripts()
+    return (await readPlayerFromMainWorld()) || readPlayerFromScripts();
+  }
+
+  function parseCaptionBody(body) {
+    if (!body || !String(body).trim()) return "";
+    try {
+      return window.YTB.captions.parseTranscriptPayload(body);
+    } catch {
+      return "";
+    }
+  }
+
+  async function fetchCaptionUrls(url) {
+    const urls = window.YTB.captions.captionFetchUrls(url);
+    for (const candidate of urls) {
+      try {
+        const fromPage = await requestPage("fetch", { url: candidate });
+        const transcript = parseCaptionBody(fromPage?.body);
+        if (transcript) return transcript;
+      } catch {
+        // Try the next format / fetcher.
+      }
+      try {
+        const fromWorker = await chrome.runtime.sendMessage({
+          type: "FETCH_TRANSCRIPT",
+          url: candidate,
+        });
+        if (fromWorker?.ok && fromWorker.transcript) {
+          return fromWorker.transcript;
+        }
+      } catch {
+        // Continue.
+      }
+    }
+    return "";
+  }
+
+  function readTranscriptSegments() {
+    const nodes = document.querySelectorAll(
+      "ytd-transcript-segment-renderer yt-formatted-string.segment-text, ytd-transcript-segment-renderer .segment-text, ytd-transcript-segment-list-renderer .segment-text"
+    );
+    return window.YTB.captions.linesToTranscript(
+      [...nodes].map((node) => node.textContent || "")
     );
   }
 
-  async function fetchTranscript(url) {
-    try {
-      const fromWorker = await chrome.runtime.sendMessage({
-        type: "FETCH_TRANSCRIPT",
-        url,
-      });
-      if (fromWorker?.ok && fromWorker.transcript) {
-        return fromWorker.transcript;
-      }
-    } catch {
-      // Fall through to a same-origin fetch from the watch page.
-    }
-    const sameOrigin = await fetch(window.YTB.captions.withJson3(url), {
-      credentials: "include",
+  function clickTranscriptButton() {
+    document
+      .querySelector(
+        "tp-yt-paper-button#expand, #expand.ytd-text-inline-expander, ytd-text-inline-expander #expand"
+      )
+      ?.click();
+
+    const buttons = [
+      ...document.querySelectorAll(
+        "button, yt-button-shape button, a, ytd-button-renderer, ytd-menu-service-item-renderer"
+      ),
+    ];
+    const match = buttons.find((el) => {
+      const label = [
+        el.getAttribute("aria-label"),
+        el.getAttribute("title"),
+        el.textContent,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return window.YTB.captions.transcriptButtonMatch(label);
     });
-    if (!sameOrigin.ok) {
-      throw new Error(`Caption request failed (${sameOrigin.status})`);
+    if (match) {
+      match.click();
+      return true;
     }
-    return window.YTB.captions.parseTranscriptPayload(await sameOrigin.text());
+    return false;
+  }
+
+  async function transcriptFromPanel() {
+    let text = readTranscriptSegments();
+    if (text) return text;
+    clickTranscriptButton();
+    const started = Date.now();
+    while (Date.now() - started < 4500) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      text = readTranscriptSegments();
+      if (text) return text;
+    }
+    return "";
+  }
+
+  async function transcriptFromCache() {
+    try {
+      const cached = await requestPage("cache", {}, 800);
+      return parseCaptionBody(cached?.body);
+    } catch {
+      return "";
+    }
+  }
+
+  async function transcriptFromInnertube(videoId) {
+    if (!videoId) return "";
+    try {
+      const result = await requestPage("innertube", { videoId }, 12000);
+      const tracks = window.YTB.captions.listCaptionTracks(result.player);
+      const track = window.YTB.captions.pickCaptionTrack(tracks);
+      if (!track) return "";
+      return fetchCaptionUrls(track.baseUrl);
+    } catch {
+      return "";
+    }
+  }
+
+  async function collectTranscript(player, fallbackTrack) {
+    const meta = window.YTB.captions.metadataFromPlayer(player, location.href);
+    const sources = [
+      transcriptFromCache,
+      () => transcriptFromPanel(),
+      () => transcriptFromInnertube(meta.videoId),
+      () => (fallbackTrack ? fetchCaptionUrls(fallbackTrack.baseUrl) : ""),
+    ];
+    for (const source of sources) {
+      const transcript = await source();
+      if (transcript) return transcript;
+    }
+    throw new Error(
+      "YouTube blocked the caption file. Open the video’s transcript panel and try again."
+    );
   }
 
   async function collectPayload() {
     if (!isWatchPage()) {
       throw new Error("Open a YouTube video first.");
     }
+    injectPageHook();
+    await new Promise((resolve) => setTimeout(resolve, 80));
     const player = await getPlayerResponse();
     if (!player) {
       throw new Error("Could not read this video. Refresh the page and try again.");
@@ -169,16 +280,13 @@
     const meta = window.YTB.captions.metadataFromPlayer(player, location.href);
     const tracks = window.YTB.captions.listCaptionTracks(player);
     const track = window.YTB.captions.pickCaptionTrack(tracks);
-    if (!track) {
-      throw new Error("This video has no captions to copy.");
-    }
-    const transcript = await fetchTranscript(track.baseUrl);
+    const transcript = await collectTranscript(player, track);
     return window.YTB.buildPayload({
       title: meta.title,
       url: meta.url,
       videoId: meta.videoId,
-      captionLanguage: track.languageCode || track.languageName,
-      captionKind: track.kind === "asr" ? "auto-generated" : "manual",
+      captionLanguage: track?.languageCode || track?.languageName || "unknown",
+      captionKind: track?.kind === "asr" ? "auto-generated" : "manual",
       transcript,
     });
   }
@@ -188,9 +296,7 @@
       await navigator.clipboard.writeText(text);
       return "clipboard";
     } catch {
-      const done = document.execCommand
-        ? copyWithTextarea(text)
-        : false;
+      const done = document.execCommand ? copyWithTextarea(text) : false;
       if (done) return "clipboard";
       downloadText(text);
       return "download";
@@ -268,8 +374,12 @@
   });
 
   function mount() {
-    if (isWatchPage()) ensureHost();
-    else document.getElementById(HOST_ID)?.remove();
+    if (isWatchPage()) {
+      injectPageHook();
+      ensureHost();
+    } else {
+      document.getElementById(HOST_ID)?.remove();
+    }
   }
 
   mount();

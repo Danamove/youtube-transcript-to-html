@@ -36,6 +36,11 @@ async function ensureContentScript(tabId) {
   } catch {
     await chrome.scripting.executeScript({
       target: { tabId },
+      world: "MAIN",
+      files: ["src/page-hook.js"],
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
       files: ["src/lib/prompt.js", "src/lib/captions.js", "src/content.js"],
     });
     return chrome.tabs.sendMessage(tabId, { type: "GET_WATCH_STATE" });

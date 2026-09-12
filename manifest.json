@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Brief Prompt",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Copy a Hebrew-brief prompt plus the YouTube transcript, then paste it into Claude Code or Codex.",
   "action": {
     "default_popup": "src/popup.html",
@@ -17,6 +17,15 @@
     "service_worker": "src/background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*"
+      ],
+      "js": ["src/page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": [
         "https://www.youtube.com/*",
@@ -39,7 +48,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/page-bridge.js"],
+      "resources": ["src/page-hook.js", "src/page-bridge.js"],
       "matches": [
         "https://www.youtube.com/*",
         "https://m.youtube.com/*"
