@@ -37,7 +37,8 @@
     return null;
   }
 
-  function parsePlayerResponseFromScripts(scripts) {
+  function parsePlayerResponseFromScripts(scripts, videoId) {
+    const found = [];
     for (const script of scripts) {
       const text = script.textContent || "";
       const keyIndex = text.indexOf("ytInitialPlayerResponse");
@@ -49,12 +50,26 @@
       const json = extractBalancedObject(text, start);
       if (!json) continue;
       try {
-        return JSON.parse(json);
+        found.push(JSON.parse(json));
       } catch {
         // Keep scanning other script tags.
       }
     }
-    return null;
+    if (videoId) {
+      const match = [...found]
+        .reverse()
+        .find((item) => item?.videoDetails?.videoId === videoId);
+      if (match) return match;
+    }
+    return found[found.length - 1] || null;
+  }
+
+  function playerMatchesVideo(player, videoId) {
+    return Boolean(videoId && player?.videoDetails?.videoId === videoId);
+  }
+
+  function cacheMatches(cache, videoId) {
+    return Boolean(videoId && cache?.videoId === videoId && cache?.body);
   }
 
   function watchUrlFromId(videoId) {
@@ -234,6 +249,61 @@
     return transcript;
   }
 
+  function compactTranscript(text) {
+    const blocks = String(text || "")
+      .split(/\n{2,}/)
+      .map((block) => {
+        const lines = [];
+        for (const raw of block.split(/\n/)) {
+          const line = normalizeCueText(raw);
+          if (!line) continue;
+          if (lines[lines.length - 1] === line) continue;
+          lines.push(line);
+        }
+        return lines.join(" ");
+      })
+      .filter(Boolean);
+    return blocks.join("\n\n").trim();
+  }
+
+  function sliceAtBreak(text, index, fromEnd) {
+    if (fromEnd) {
+      const cut = text.length - index;
+      const space = text.indexOf(" ", cut);
+      const next = space === -1 ? cut : space + 1;
+      return text.slice(next).trim();
+    }
+    const space = text.lastIndexOf(" ", index);
+    const end = space === -1 ? index : space;
+    return text.slice(0, end).trim();
+  }
+
+  const MAX_TRANSCRIPT_CHARS = 28000;
+
+  function fitTranscript(text, maxChars = MAX_TRANSCRIPT_CHARS) {
+    const compact = compactTranscript(text);
+    const originalChars = String(text || "").length;
+    if (compact.length <= maxChars) {
+      return {
+        text: compact,
+        condensed: compact.length < originalChars,
+        truncated: false,
+        originalChars,
+      };
+    }
+    const head = Math.floor(maxChars * 0.62);
+    const tail = Math.floor(maxChars * 0.28);
+    const start = sliceAtBreak(compact, head, false);
+    const end = sliceAtBreak(compact, tail, true);
+    const note = `\n\n[CONDENSED: original ${originalChars} characters. Middle omitted so Claude Code does not stall. Write the Hebrew HTML brief from this sample. Do not ask for the rest.]\n\n`;
+    return {
+      text: `${start}${note}${end}`,
+      condensed: true,
+      truncated: true,
+      originalChars,
+    };
+  }
+
   function metadataFromPlayer(playerResponse, href) {
     const details = playerResponse?.videoDetails || {};
     const videoId = details.videoId || videoIdFromHref(href);
@@ -264,5 +334,10 @@
     transcriptButtonMatch,
     buildInnertubePlayerBody,
     INNERTUBE_CLIENTS,
+    playerMatchesVideo,
+    cacheMatches,
+    compactTranscript,
+    fitTranscript,
+    MAX_TRANSCRIPT_CHARS,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

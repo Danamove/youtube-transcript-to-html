@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Brief Prompt",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Copy a Hebrew-brief prompt plus the YouTube transcript, then paste it into Claude Code or Codex.",
   "action": {
     "default_popup": "src/popup.html",

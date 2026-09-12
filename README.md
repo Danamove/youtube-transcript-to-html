@@ -25,7 +25,11 @@ Hebrew captions are preferred, then English, then the first available track. Man
 
 Videos with no captions show an error instead of copying an empty payload.
 
-YouTube now blocks raw caption URLs unless the player proves it made the request. The extension first reuses captions YouTube already loaded, then opens the on-page transcript panel if needed, then asks YouTube’s mobile player API. After you update the files, open `chrome://extensions` and click **Reload** on YouTube Brief Prompt, then refresh the YouTube tab.
+YouTube now blocks raw caption URLs unless the player proves it made the request. The extension first reuses captions YouTube already loaded **for the current video**, then asks YouTube’s mobile player API, then opens a fresh transcript panel. Switching videos clears the previous status and ignores the last video’s captions.
+
+Long talks are compacted and, if still huge, shortened with a `CONDENSED` marker so Claude Code does not freeze on paste.
+
+After you update the files, open `chrome://extensions` and click **Reload** on YouTube Brief Prompt, then refresh the YouTube tab.
 
 ## Preview the target HTML
 

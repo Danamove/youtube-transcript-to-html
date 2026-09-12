@@ -112,4 +112,48 @@ const iosBody = captions.buildInnertubePlayerBody("jNQXAC9IVRw", "IOS");
 assert.equal(iosBody.videoId, "jNQXAC9IVRw");
 assert.equal(iosBody.context.client.clientName, "IOS");
 
+const otherPlayer = {
+  videoDetails: { title: "Other", videoId: "aaaaaaaaaaa" },
+};
+const mixedScripts = [
+  { textContent: `var ytInitialPlayerResponse = ${JSON.stringify(otherPlayer)};` },
+  { textContent: `var ytInitialPlayerResponse = ${JSON.stringify(player)};` },
+];
+assert.equal(
+  captions.parsePlayerResponseFromScripts(mixedScripts, "dQw4w9wgGcQ")
+    .videoDetails.videoId,
+  "dQw4w9wgGcQ"
+);
+assert.equal(captions.playerMatchesVideo(player, "dQw4w9wgGcQ"), true);
+assert.equal(captions.playerMatchesVideo(player, "aaaaaaaaaaa"), false);
+assert.equal(
+  captions.cacheMatches({ videoId: "dQw4w9wgGcQ", body: "x" }, "dQw4w9wgGcQ"),
+  true
+);
+assert.equal(
+  captions.cacheMatches({ videoId: "aaaaaaaaaaa", body: "old" }, "dQw4w9wgGcQ"),
+  false
+);
+
+const noisy = "Hello world\nHello world\n\nNext idea\nNext idea";
+assert.equal(captions.compactTranscript(noisy), "Hello world\n\nNext idea");
+
+const huge = "word ".repeat(20000).trim();
+const fitted = captions.fitTranscript(huge, 400);
+assert.equal(fitted.truncated, true);
+assert.ok(fitted.text.length < 600);
+assert.match(fitted.text, /CONDENSED/);
+assert.ok(fitted.originalChars > 400);
+
+const longPayload = context.YTB.buildPayload({
+  title: "Long talk",
+  url: "https://www.youtube.com/watch?v=dQw4w9wgGcQ",
+  videoId: "dQw4w9wgGcQ",
+  captionLanguage: "en",
+  captionKind: "auto-generated",
+  transcript: huge,
+});
+assert.match(longPayload, /CONDENSED/);
+assert.match(BRIEF_PROMPT, /do not stall/);
+
 console.log("ok");

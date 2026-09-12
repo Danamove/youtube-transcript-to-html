@@ -23,10 +23,19 @@ Format: single HTML file using Tailwind via CDN:
 - No external images, no JS frameworks, no build step: pure HTML + Tailwind CDN + minimal vanilla JS only if a toggle needs it.
 
 Behavior:
-- Ask before starting if the source is unusually long, low-signal, or ambiguous in scope.
+- If the transcript is marked CONDENSED or is long: do not ask for the rest, do not stall, write the HTML file from the text you have.
+- Ask before starting only if the source is low-signal or ambiguous in scope, not because it is long.
 - Output the HTML as a file I can save, not inline in chat.`;
 
-  function buildPayload({ title, url, videoId, captionLanguage, captionKind, transcript }) {
+  function buildPayload({
+    title,
+    url,
+    videoId,
+    captionLanguage,
+    captionKind,
+    transcript,
+  }) {
+    const fitted = global.YTB.captions.fitTranscript(transcript);
     const lines = [
       BRIEF_PROMPT,
       "",
@@ -38,12 +47,15 @@ Behavior:
       `Video ID: ${videoId || "(unknown)"}`,
       `Caption language: ${captionLanguage || "(unknown)"}`,
       `Caption kind: ${captionKind || "unknown"}`,
+      fitted.truncated
+        ? `Transcript size: condensed from ${fitted.originalChars} characters so the paste does not freeze Claude Code.`
+        : `Transcript size: ${fitted.originalChars} characters`,
       "",
       "---",
       "",
       "Transcript",
       "",
-      transcript.trim(),
+      fitted.text,
       "",
     ];
     return lines.join("\n");

@@ -2,7 +2,7 @@
   if (window.__ytbBriefHook) return;
   window.__ytbBriefHook = true;
 
-  const cache = { videoId: "", body: "", url: "" };
+  const cacheByVideo = {};
 
   function videoIdFromUrl(url) {
     try {
@@ -16,9 +16,9 @@
     const href = String(url || "");
     const text = String(body || "");
     if (!href.includes("/api/timedtext") || !text.trim()) return;
-    cache.videoId = videoIdFromUrl(href);
-    cache.body = text;
-    cache.url = href;
+    const videoId = videoIdFromUrl(href);
+    if (!videoId) return;
+    cacheByVideo[videoId] = { videoId, body: text, url: href };
   }
 
   const origFetch = window.fetch;
@@ -129,7 +129,14 @@
     };
     try {
       if (action === "cache") {
-        reply(cache);
+        const videoId = event.data.videoId || "";
+        reply(cacheByVideo[videoId] || { videoId: "", body: "", url: "" });
+        return;
+      }
+      if (action === "clear") {
+        const videoId = event.data.videoId;
+        if (videoId) delete cacheByVideo[videoId];
+        reply({ ok: true });
         return;
       }
       if (action === "fetch") {

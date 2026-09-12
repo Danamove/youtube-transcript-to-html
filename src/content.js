@@ -82,11 +82,26 @@
     const status = host?.shadowRoot?.getElementById("status");
     const button = host?.shadowRoot?.getElementById("copy");
     if (!status || !button) return;
+    if (!kind && !text) {
+      status.className = "status";
+      status.textContent = "";
+      button.disabled = false;
+      button.textContent = "Copy prompt + transcript";
+      return;
+    }
     status.className = `status show ${kind}`;
     status.textContent = text;
     button.disabled = kind === "pending";
     button.textContent =
       kind === "pending" ? "Copying…" : "Copy prompt + transcript";
+  }
+
+  function currentVideoId() {
+    return window.YTB.captions.videoIdFromHref(location.href);
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   function injectPageHook() {
@@ -123,8 +138,11 @@
     });
   }
 
-  function readPlayerFromScripts() {
-    return window.YTB.captions.parsePlayerResponseFromScripts(document.scripts);
+  function readPlayerFromScripts(videoId) {
+    return window.YTB.captions.parsePlayerResponseFromScripts(
+      document.scripts,
+      videoId
+    );
   }
 
   async function readPlayerFromMainWorld() {
@@ -139,8 +157,33 @@
     return null;
   }
 
-  async function getPlayerResponse() {
-    return (await readPlayerFromMainWorld()) || readPlayerFromScripts();
+  async function getPlayerResponse(videoId) {
+    const fromPage = await readPlayerFromMainWorld();
+    if (window.YTB.captions.playerMatchesVideo(fromPage, videoId)) {
+      return fromPage;
+    }
+    const fromScripts = readPlayerFromScripts(videoId);
+    if (window.YTB.captions.playerMatchesVideo(fromScripts, videoId)) {
+      return fromScripts;
+    }
+    return (
+      (videoId && fromPage) ||
+      fromScripts ||
+      fromPage ||
+      null
+    );
+  }
+
+  async function waitForCurrentPlayer(videoId) {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      if (currentVideoId() !== videoId) return null;
+      const player = await getPlayerResponse(videoId);
+      if (window.YTB.captions.playerMatchesVideo(player, videoId)) {
+        return player;
+      }
+      await sleep(120);
+    }
+    return getPlayerResponse(videoId);
   }
 
   function parseCaptionBody(body) {
@@ -186,6 +229,22 @@
     );
   }
 
+  function closeTranscriptPanel() {
+    const selectors = [
+      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #visibility-button button',
+      'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #dismiss-button button',
+      "#panels ytd-engagement-panel-section-list-renderer[visibility] #visibility-button button",
+    ];
+    for (const selector of selectors) {
+      const button = document.querySelector(selector);
+      if (button) {
+        button.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
   function clickTranscriptButton() {
     document
       .querySelector(
@@ -215,23 +274,26 @@
     return false;
   }
 
-  async function transcriptFromPanel() {
-    let text = readTranscriptSegments();
-    if (text) return text;
-    clickTranscriptButton();
+  async function transcriptFromPanel(videoId) {
+    closeTranscriptPanel();
+    await sleep(200);
+    if (currentVideoId() !== videoId) return "";
+    if (!clickTranscriptButton()) return "";
     const started = Date.now();
     while (Date.now() - started < 4500) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      text = readTranscriptSegments();
+      if (currentVideoId() !== videoId) return "";
+      await sleep(150);
+      const text = readTranscriptSegments();
       if (text) return text;
     }
     return "";
   }
 
-  async function transcriptFromCache() {
+  async function transcriptFromCache(videoId) {
     try {
-      const cached = await requestPage("cache", {}, 800);
-      return parseCaptionBody(cached?.body);
+      const cached = await requestPage("cache", { videoId }, 800);
+      if (!window.YTB.captions.cacheMatches(cached, videoId)) return "";
+      return parseCaptionBody(cached.body);
     } catch {
       return "";
     }
@@ -250,15 +312,17 @@
     }
   }
 
-  async function collectTranscript(player, fallbackTrack) {
-    const meta = window.YTB.captions.metadataFromPlayer(player, location.href);
+  async function collectTranscript(videoId, fallbackTrack) {
     const sources = [
-      transcriptFromCache,
-      () => transcriptFromPanel(),
-      () => transcriptFromInnertube(meta.videoId),
+      () => transcriptFromCache(videoId),
+      () => transcriptFromInnertube(videoId),
       () => (fallbackTrack ? fetchCaptionUrls(fallbackTrack.baseUrl) : ""),
+      () => transcriptFromPanel(videoId),
     ];
     for (const source of sources) {
+      if (currentVideoId() !== videoId) {
+        throw new Error("Video changed. Click copy again on this video.");
+      }
       const transcript = await source();
       if (transcript) return transcript;
     }
@@ -271,20 +335,24 @@
     if (!isWatchPage()) {
       throw new Error("Open a YouTube video first.");
     }
+    const videoId = currentVideoId();
+    if (!videoId) {
+      throw new Error("Could not read this video id. Refresh and try again.");
+    }
     injectPageHook();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const player = await getPlayerResponse();
-    if (!player) {
-      throw new Error("Could not read this video. Refresh the page and try again.");
+    await sleep(80);
+    const player = await waitForCurrentPlayer(videoId);
+    if (!player || !window.YTB.captions.playerMatchesVideo(player, videoId)) {
+      throw new Error("Still on the previous video data. Refresh this tab and try again.");
     }
     const meta = window.YTB.captions.metadataFromPlayer(player, location.href);
     const tracks = window.YTB.captions.listCaptionTracks(player);
     const track = window.YTB.captions.pickCaptionTrack(tracks);
-    const transcript = await collectTranscript(player, track);
+    const transcript = await collectTranscript(videoId, track);
     return window.YTB.buildPayload({
       title: meta.title,
       url: meta.url,
-      videoId: meta.videoId,
+      videoId,
       captionLanguage: track?.languageCode || track?.languageName || "unknown",
       captionKind: track?.kind === "asr" ? "auto-generated" : "manual",
       transcript,
@@ -342,10 +410,13 @@
       const payload = await collectPayload();
       const via = await copyText(payload);
       const count = payload.length.toLocaleString();
+      const condensed = payload.includes("[CONDENSED:");
       const message =
         via === "download"
           ? `Clipboard blocked a ${count}-character payload. Downloaded a .txt instead — paste that into Claude Code or Codex.`
-          : `Copied ${count} characters. Paste into Claude Code or Codex.`;
+          : condensed
+            ? `Copied ${count} characters (shortened so Claude Code will not freeze). Paste into Claude Code or Codex.`
+            : `Copied ${count} characters. Paste into Claude Code or Codex.`;
       if (announce) setStatus("ok", message);
       return { ok: true, via, characters: payload.length, message };
     } catch (error) {
@@ -373,6 +444,12 @@
     return false;
   });
 
+  function resetForNavigation() {
+    busy = false;
+    setStatus("", "");
+    closeTranscriptPanel();
+  }
+
   function mount() {
     if (isWatchPage()) {
       injectPageHook();
@@ -383,6 +460,7 @@
   }
 
   mount();
+  document.addEventListener("yt-navigate-start", resetForNavigation);
   document.addEventListener("yt-navigate-finish", mount);
   document.addEventListener("yt-page-data-updated", mount);
   window.addEventListener("popstate", () => setTimeout(mount, 50));
