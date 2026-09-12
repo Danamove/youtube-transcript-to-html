@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Brief Prompt</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <main class="mx-auto max-w-3xl px-5 py-12 sm:py-16">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Chrome extension
+      </p>
+      <h1 class="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+        Copy a YouTube transcript with the Hebrew-brief prompt
+      </h1>
+      <p class="mt-4 text-lg leading-relaxed text-slate-600">
+        This extension does not call an API. On a watch page it copies your
+        conversion prompt plus the full caption transcript. You paste that into
+        Claude Code or Codex, and that agent writes the Hebrew HTML file.
+      </p>
+
+      <section class="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold">Load the unpacked extension</h2>
+        <ol class="mt-4 list-decimal space-y-2 pl-5 text-slate-700 leading-relaxed">
+          <li>Open <span class="font-medium">chrome://extensions</span></li>
+          <li>Turn on Developer mode</li>
+          <li>Click <span class="font-medium">Load unpacked</span> and select this repo folder</li>
+          <li>Open a YouTube video that has captions</li>
+          <li>Click <span class="font-medium">Copy prompt + transcript</span> on the page or in the popup</li>
+          <li>Paste into Claude Code or Codex</li>
+        </ol>
+      </section>
+
+      <section class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold">What gets copied</h2>
+        <ul class="mt-4 list-disc space-y-2 pl-5 text-slate-700 leading-relaxed">
+          <li>The Hebrew brief prompt, including פרק בונוס — ליישום בעבודה</li>
+          <li>Video title, URL, id, and caption language</li>
+          <li>The full cleaned transcript</li>
+        </ul>
+        <p class="mt-4 text-slate-700 leading-relaxed">
+          The agent should save a single RTL HTML file, not dump the page in chat.
+          If a video has no captions, the extension says so instead of copying junk.
+        </p>
+      </section>
+
+      <p class="mt-8">
+        <a
+          class="inline-flex rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+          href="./sample-brief.html"
+        >
+          Open a sample Hebrew brief
+        </a>
+      </p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+#ytb-copy-brief-host {
+  position: fixed;
+  top: 88px;
+  right: 20px;
+  z-index: 2147483646;
+  pointer-events: auto;
+}
+
+@media (max-width: 720px) {
+  #ytb-copy-brief-host {
+    top: auto;
+    bottom: 84px;
+    right: 12px;
+  }
+}

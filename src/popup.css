@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 320px;
+  font-family: system-ui, "Segoe UI", Arial, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+main {
+  padding: 16px 16px 14px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.lede {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+button {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  padding: 11px 12px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1e293b;
+}
+
+button[disabled] {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.status {
+  min-height: 2.6em;
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.status.ok {
+  color: #166534;
+}
+
+.status.error {
+  color: #991b1b;
+}
